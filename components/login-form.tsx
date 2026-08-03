@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { ChevronLeft, Sparkles } from 'lucide-react'
@@ -49,7 +48,9 @@ export function LoginForm() {
         await signIn(email, password)
         toast.success('登录成功')
       }
-      router.replace(next)
+      // 使用 hard navigation 确保 Supabase cookie 已写入后再跳转
+      // 避免客户端 router.replace 与 Next.js 内部路径处理冲突
+      window.location.href = next
     } catch (err) {
       const message = err instanceof Error ? err.message : '操作失败，请重试'
       // 翻译 Supabase 错误信息为中文
@@ -64,13 +65,13 @@ export function LoginForm() {
   return (
     <div className="flex min-h-svh flex-col">
       <header className="flex h-16 items-center border-b border-border px-4 md:px-6">
-        <Link
+        <a
           href="/"
           className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
           <ChevronLeft className="size-4" />
           返回 AI 工具集
-        </Link>
+        </a>
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 py-12">

@@ -1,8 +1,8 @@
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { type User as SupabaseUser } from '@supabase/supabase-js'
-import { createBrowserClient } from '@/lib/supabase'
+import { getBrowserClient } from '@/lib/supabase'
 
 export type Submission = {
   id: string
@@ -13,6 +13,8 @@ export type Submission = {
   category: string
   status: 'reviewing' | 'published'
   createdAt: string
+  logo_url?: string
+  cover_url?: string
 }
 
 export type User = {
@@ -25,82 +27,94 @@ export type User = {
 type AuthState = {
   ready: boolean
   user: User | null
-  supabaseUser: SupabaseUser | null
   submissions: Submission[]
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, name: string) => Promise<void>
   signOut: () => Promise<void>
-  addSubmission: (input: Omit<Submission, 'id' | 'status' | 'createdAt'>) => void
+  addSubmission: (input: Omit<Submission, 'id' | 'status' | 'createdAt'>) => Promise<void>
+  refreshSubmissions: () => Promise<void>
 }
 
-const seedSubmissions: Submission[] = [
-  {
-    id: 'sub-1',
-    name: '灵感便签',
-    slug: 'inspo-note',
-    url: 'https://inspo-note.example.com',
-    summary: 'AI 灵感收集与自动整理笔记工具',
-    category: 'office',
-    status: 'published',
-    createdAt: '2026-06-18 14:22',
-  },
-  {
-    id: 'sub-2',
-    name: '短剧分镜师',
-    slug: 'short-drama-board',
-    url: 'https://short-drama-board.example.com',
-    summary: '一键把剧本拆成可拍摄的分镜脚本',
-    category: 'video',
-    status: 'reviewing',
-    createdAt: '2026-07-29 09:05',
-  },
-]
+const STORAGE_KEY = 'aibot.submissions'
 
 const AuthContext = createContext<AuthState | null>(null)
-const STORAGE_KEY = 'aibot.submissions'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false)
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null)
-  const [submissions, setSubmissions] = useState<Submission[]>(seedSubmissions)
+  const [submissions, setSubmissions] = useState<Submission[]>([])
+  const initDone = useRef(false)
 
-  const supabase = useMemo(() => createBrowserClient(), [])
+  const supabase = useMemo(() => getBrowserClient(), [])
 
-  // 从 sessionStorage 恢复本地提交历史
-  useEffect(() => {
-    try {
-      const raw = window.sessionStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw) as Submission[]
-        if (Array.isArray(parsed) && parsed.length > 0) setSubmissions(parsed)
+  const loadSubmissions = useCallback(
+    async (uid: string) => {
+      const { data, error } = await supabase
+        .from('submissions')
+        .select('id, name, slug, url, summary, category, status, created_at')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false })
+      if (error) {
+        console.error('Failed to load submissions:', error)
+        return
       }
-    } catch {
-      // ignore
-    }
-  }, [])
+      setSubmissions(
+        (data ?? []).map((row: Record<string, unknown>) => ({
+          id: row.id as string,
+          name: row.name as string,
+          slug: row.slug as string,
+          url: row.url as string,
+          summary: row.summary as string,
+          category: row.category as string,
+          status: (row.status as 'reviewing' | 'published') ?? 'reviewing',
+          createdAt: new Date(row.created_at as string).toLocaleString('zh-CN', { hour12: false }),
+        })),
+      )
+    },
+    [supabase],
+  )
 
+  // 一次性初始化：检查会话 + 订阅变化
   useEffect(() => {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(submissions))
-  }, [submissions])
+    if (initDone.current) return
+    initDone.current = true
 
-  // 监听 Supabase 认证状态
-  useEffect(() => {
-    // 先获取当前会话
+    let unsubbed = false
+
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSupabaseUser(session?.user ?? null)
+      if (unsubbed) return
+      const user = session?.user ?? null
+      setSupabaseUser(user)
+      if (user) {
+        loadSubmissions(user.id)
+      } else {
+        // 无会话时从本地缓存恢复
+        try {
+          const raw = window.sessionStorage.getItem(STORAGE_KEY)
+          if (raw) {
+            const parsed = JSON.parse(raw) as Submission[]
+            if (Array.isArray(parsed)) setSubmissions(parsed)
+          }
+        } catch { /* ignore */ }
+      }
       setReady(true)
     })
 
-    // 订阅认证变化（Token 刷新、登出等）
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSupabaseUser(session?.user ?? null)
-      if (!session) setReady(true)
+      const user = session?.user ?? null
+      setSupabaseUser(user)
+      if (user) {
+        loadSubmissions(user.id)
+      }
     })
 
-    return () => subscription.unsubscribe()
-  }, [supabase])
+    return () => {
+      unsubbed = true
+      subscription.unsubscribe()
+    }
+  }, [supabase, loadSubmissions])
 
   const user = useMemo<User | null>(() => {
     if (!supabaseUser) return null
@@ -112,41 +126,75 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [supabaseUser])
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) throw error
-  }, [supabase])
+  const signIn = useCallback(
+    async (email: string, password: string) => {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) throw error
+    },
+    [supabase],
+  )
 
-  const signUp = useCallback(async (email: string, password: string, name: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { name } },
-    })
-    if (error) throw error
-  }, [supabase])
+  const signUp = useCallback(
+    async (email: string, password: string, name: string) => {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { name } },
+      })
+      if (error) throw error
+    },
+    [supabase],
+  )
 
   const signOut = useCallback(async () => {
+    setSubmissions([])
     await supabase.auth.signOut()
   }, [supabase])
 
-  const addSubmission = useCallback((input: Omit<Submission, 'id' | 'status' | 'createdAt'>) => {
-    const now = new Date()
-    const pad = (n: number) => String(n).padStart(2, '0')
-    setSubmissions((prev) => [
-      {
-        ...input,
-        id: `sub-${now.getTime()}`,
-        status: 'reviewing',
-        createdAt: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`,
-      },
-      ...prev,
-    ])
-  }, [])
+  const addSubmission = useCallback(
+    async (input: Omit<Submission, 'id' | 'status' | 'createdAt'>) => {
+      if (!supabaseUser) throw new Error('请先登录')
+      const id = `sub-${Date.now()}`
+      const now = new Date()
+      const createdAt = now.toLocaleString('zh-CN', { hour12: false })
+      const newItem = { ...input, id, status: 'reviewing' as const, createdAt }
+      setSubmissions((prev) => [newItem, ...prev])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase.from('submissions') as any).insert({
+        id: newItem.id,
+        user_id: supabaseUser.id,
+        name: input.name,
+        slug: input.slug,
+        url: input.url,
+        summary: input.summary,
+        category: input.category,
+      })
+      if (error) {
+        console.error('Failed to save submission:', error)
+        // 回滚
+        setSubmissions((prev) => prev.filter((s) => s.id !== newItem.id))
+        throw error
+      }
+    },
+    [supabase, supabaseUser],
+  )
+
+  const refreshSubmissions = useCallback(async () => {
+    if (supabaseUser) await loadSubmissions(supabaseUser.id)
+  }, [supabaseUser, loadSubmissions])
 
   const value = useMemo<AuthState>(
-    () => ({ ready, user, supabaseUser, submissions, signIn, signUp, signOut, addSubmission }),
-    [ready, user, supabaseUser, submissions, signIn, signUp, signOut, addSubmission],
+    () => ({
+      ready,
+      user,
+      submissions,
+      signIn,
+      signUp,
+      signOut,
+      addSubmission,
+      refreshSubmissions,
+    }),
+    [ready, user, submissions, signIn, signUp, signOut, addSubmission, refreshSubmissions],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

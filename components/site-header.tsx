@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { ChevronDown, LayoutDashboard, LogIn, LogOut, Search, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -9,7 +8,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -29,11 +27,10 @@ export function SiteHeader({
   onQueryChange?: (value: string) => void
   compactBrand?: boolean
 }) {
-  const router = useRouter()
   const { user, signOut } = useAuth()
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md md:px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background px-4 md:px-6">
       <MobileSidebar activeSlug={activeSlug} />
 
       {compactBrand && (
@@ -81,16 +78,16 @@ export function SiteHeader({
             }
           />
           <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuLabel className="truncate font-normal text-muted-foreground">
+            <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground truncate">
               {user.email}
-            </DropdownMenuLabel>
+            </div>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => router.push('/account?tab=history')}>
+              <DropdownMenuItem onClick={() => { window.location.href = '/account?tab=history' }}>
                 <LayoutDashboard />
                 个人中心
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/account?tab=submit')}>
+              <DropdownMenuItem onClick={() => { window.location.href = '/account?tab=submit' }}>
                 <UserRound />
                 提交站点
               </DropdownMenuItem>
@@ -99,7 +96,7 @@ export function SiteHeader({
             <DropdownMenuItem
               onClick={() => {
                 signOut()
-                router.push('/')
+                window.location.href = '/'
               }}
             >
               <LogOut />
@@ -110,7 +107,7 @@ export function SiteHeader({
       ) : (
         <Button
           variant="outline"
-          onClick={() => router.push('/login?next=/account%3Ftab%3Dhistory')}
+          onClick={() => { window.location.href = '/login?next=/account?tab=history' }}
         >
           <LogIn data-icon="inline-start" />
           登录

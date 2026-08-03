@@ -79,7 +79,7 @@ export function Directory() {
 
   return (
     <div className="flex min-h-svh">
-      <aside className="sticky top-0 hidden h-svh w-60 shrink-0 border-r border-sidebar-border lg:block">
+      <aside className="sticky top-0 z-40 hidden h-svh w-60 shrink-0 border-r border-sidebar-border lg:block">
         <CategorySidebar activeSlug={activeSlug} onNavigate={handleNavigate} />
       </aside>
 

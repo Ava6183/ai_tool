@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { ChevronLeft, FilePlus2, Inbox, LogOut } from 'lucide-react'
@@ -71,13 +70,13 @@ export function AccountView() {
   return (
     <div className="min-h-svh">
       <header className="flex h-16 items-center justify-between border-b border-border px-4 md:px-6">
-        <Link
+        <a
           href="/"
           className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
           <ChevronLeft className="size-4" />
           返回 AI 工具集
-        </Link>
+        </a>
         <div className="flex items-center gap-2">
           <Avatar className="size-8">
             <AvatarFallback className="text-xs">{user.name.slice(0, 2)}</AvatarFallback>
@@ -119,9 +118,14 @@ export function AccountView() {
 
           <TabsContent value="submit" className="mt-6">
             <SubmitTab
-              onSubmitted={(payload) => {
-                addSubmission(payload)
-                toast.success('提交成功，已进入审核队列')
+              onSubmitted={async (payload) => {
+                try {
+                  await addSubmission(payload)
+                  toast.success('提交成功，已进入审核队列')
+                } catch {
+                  toast.error('提交失败，请重试')
+                  return
+                }
                 setTab('history')
                 router.replace('/account?tab=history', { scroll: false })
               }}
@@ -227,6 +231,8 @@ function SubmitTab({
     url: string
     summary: string
     category: string
+    logo_url?: string
+    cover_url?: string
   }) => void
 }) {
   const [name, setName] = useState('')
@@ -235,6 +241,8 @@ function SubmitTab({
   const [summary, setSummary] = useState('')
   const [category, setCategory] = useState('')
   const [content, setContent] = useState('')
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [coverUrl, setCoverUrl] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [pending, setPending] = useState(false)
 
@@ -251,7 +259,7 @@ function SubmitTab({
 
     setPending(true)
     window.setTimeout(() => {
-      onSubmitted({ name: name.trim(), slug, url, summary: summary.trim(), category })
+      onSubmitted({ name: name.trim(), slug, url, summary: summary.trim(), category, logo_url: logoUrl ?? undefined, cover_url: coverUrl ?? undefined })
       setPending(false)
       setName('')
       setSlug('')
@@ -344,8 +352,22 @@ function SubmitTab({
             <FieldSet>
               <FieldLegend>图片素材</FieldLegend>
               <div className="grid gap-6 sm:grid-cols-[auto_1fr]">
-                <ImageUpload label="网站 Logo" hint="正方形，建议 256×256" />
-                <ImageUpload label="网站预览图" aspect="wide" hint="建议 1200×400，用作详情页封面" />
+                <ImageUpload
+                  label="网站 Logo"
+                  hint="正方形，建议 256×256，PNG / WebP，最大 2MB"
+                  aspect="square"
+                  bucket="tool-logos"
+                  slug={slug || 'placeholder'}
+                  onChange={setLogoUrl}
+                />
+                <ImageUpload
+                  label="网站预览图"
+                  aspect="wide"
+                  hint="建议 1200×400，PNG / JPG / WebP，最大 5MB"
+                  bucket="tool-covers"
+                  slug={slug || 'placeholder'}
+                  onChange={setCoverUrl}
+                />
               </div>
             </FieldSet>
 
