@@ -28,6 +28,7 @@ export async function uploadFile(
   userId: string,
 ): Promise<string> {
   const supabase = getBrowserClient()
+  if (!supabase) throw new Error('客户端未初始化')
 
   if (!ALLOWED_MIME[bucket].includes(file.type)) {
     throw new Error(`不支持的文件格式：${file.type}，仅支持 PNG / JPG / WebP`)
@@ -57,6 +58,7 @@ export async function uploadFile(
  */
 export async function deleteFile(bucket: StorageBucket, path: string): Promise<void> {
   const supabase = getBrowserClient()
+  if (!supabase) throw new Error('客户端未初始化')
   const { error } = await supabase.storage.from(bucket).remove([path])
   if (error) throw error
 }

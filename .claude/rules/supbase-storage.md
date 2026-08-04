@@ -86,12 +86,14 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- 3. category-icons 策略
 -- ============================================================
 -- 所有人可读（用于侧栏图标展示）
+DROP POLICY IF EXISTS "category-icons read all" ON storage.objects;
 CREATE POLICY "category-icons read all"
   ON storage.objects FOR SELECT
   TO authenticated, anon
   USING (bucket_id = 'category-icons');
 
 -- 仅可写入/更新/删除自己目录下的文件
+DROP POLICY IF EXISTS "category-icons write own" ON storage.objects;
 CREATE POLICY "category-icons write own"
   ON storage.objects FOR ALL
   TO authenticated
@@ -102,11 +104,13 @@ CREATE POLICY "category-icons write own"
 -- ============================================================
 -- 4. tool-logos 策略
 -- ============================================================
+DROP POLICY IF EXISTS "tool-logos read all" ON storage.objects;
 CREATE POLICY "tool-logos read all"
   ON storage.objects FOR SELECT
   TO authenticated, anon
   USING (bucket_id = 'tool-logos');
 
+DROP POLICY IF EXISTS "tool-logos write own" ON storage.objects;
 CREATE POLICY "tool-logos write own"
   ON storage.objects FOR ALL
   TO authenticated
@@ -117,11 +121,13 @@ CREATE POLICY "tool-logos write own"
 -- ============================================================
 -- 5. tool-covers 策略
 -- ============================================================
+DROP POLICY IF EXISTS "tool-covers read all" ON storage.objects;
 CREATE POLICY "tool-covers read all"
   ON storage.objects FOR SELECT
   TO authenticated, anon
   USING (bucket_id = 'tool-covers');
 
+DROP POLICY IF EXISTS "tool-covers write own" ON storage.objects;
 CREATE POLICY "tool-covers write own"
   ON storage.objects FOR ALL
   TO authenticated

@@ -49,34 +49,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loadSubmissions = useCallback(
     async (uid: string) => {
-      const { data, error } = await supabase
-        .from('submissions')
-        .select('id, name, slug, url, summary, category, status, created_at')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: false })
-      if (error) {
-        console.error('Failed to load submissions:', error)
+      if (!supabase) {
+        console.warn('[loadSubmissions] Supabase client not initialized')
         return
       }
-      setSubmissions(
-        (data ?? []).map((row: Record<string, unknown>) => ({
-          id: row.id as string,
-          name: row.name as string,
-          slug: row.slug as string,
-          url: row.url as string,
-          summary: row.summary as string,
-          category: row.category as string,
-          status: (row.status as 'reviewing' | 'published') ?? 'reviewing',
-          createdAt: new Date(row.created_at as string).toLocaleString('zh-CN', { hour12: false }),
-        })),
-      )
+      try {
+        // 先调用 getUser 刷新/验证 token，确保 JWT 有效
+        const { data: userData, error: userError } = await supabase.auth.getUser()
+        if (userError || !userData?.user) {
+          console.warn('[loadSubmissions] JWT invalid or expired, skipping:', userError?.message)
+          setSubmissions([])
+          return
+        }
+
+        const { data, error } = await supabase
+          .from('submissions')
+          .select('id, name, slug, url, summary, category, status, created_at')
+          .eq('user_id', uid)
+          .order('created_at', { ascending: false })
+
+        if (error) {
+          // PostgREST 返回空对象 {} = JWT 过期/RLS 拒绝，静默处理
+          const keys = Object.keys(error)
+          if (keys.length === 0) {
+            console.warn('[loadSubmissions] Query rejected (empty error) — JWT may be stale or RLS blocked')
+          } else {
+            console.error('[loadSubmissions] error:', error.message ?? error)
+          }
+          return
+        }
+        setSubmissions(
+          (data ?? []).map((row: Record<string, unknown>) => ({
+            id: row.id as string,
+            name: row.name as string,
+            slug: row.slug as string,
+            url: row.url as string,
+            summary: row.summary as string,
+            category: row.category as string,
+            status: (row.status as 'reviewing' | 'published') ?? 'reviewing',
+            createdAt: new Date(row.created_at as string).toLocaleString('zh-CN', { hour12: false }),
+          })),
+        )
+      } catch (err: any) {
+        console.error('[loadSubmissions] exception:', err?.message)
+      }
     },
     [supabase],
   )
 
   // 一次性初始化：检查会话 + 订阅变化
   useEffect(() => {
-    if (initDone.current) return
+    if (initDone.current || !supabase) return
     initDone.current = true
 
     let unsubbed = false
@@ -128,6 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(
     async (email: string, password: string) => {
+      if (!supabase) throw new Error('客户端未初始化')
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
     },
@@ -136,6 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = useCallback(
     async (email: string, password: string, name: string) => {
+      if (!supabase) throw new Error('客户端未初始化')
       const { error } = await supabase.auth.signUp({
         email,
         password,
@@ -147,6 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 
   const signOut = useCallback(async () => {
+    if (!supabase) return
     setSubmissions([])
     await supabase.auth.signOut()
   }, [supabase])
@@ -159,6 +185,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const createdAt = now.toLocaleString('zh-CN', { hour12: false })
       const newItem = { ...input, id, status: 'reviewing' as const, createdAt }
       setSubmissions((prev) => [newItem, ...prev])
+      if (!supabase) throw new Error('客户端未初始化')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase.from('submissions') as any).insert({
         id: newItem.id,
@@ -170,7 +197,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         category: input.category,
       })
       if (error) {
-        console.error('Failed to save submission:', error)
+        console.warn('Failed to save submission:', error?.message ?? '(未知错误，可能是表尚未创建)')
         // 回滚
         setSubmissions((prev) => prev.filter((s) => s.id !== newItem.id))
         throw error

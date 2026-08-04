@@ -160,13 +160,28 @@ approved_at         new (bool)
 
 ```sql
 -- ============================================================
+-- 0. 管理员权限辅助函数（避免普通用户直接查 auth.users）
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM auth.users
+    WHERE id = auth.uid()
+      AND raw_user_meta_data->>'is_admin' = 'true'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+
+-- ============================================================
 -- 1. categories 表
 -- ============================================================
 CREATE TABLE IF NOT EXISTS categories (
   slug        text PRIMARY KEY,
   name        text        NOT NULL,
   icon        text        NOT NULL,
-  desc        text        NOT NULL,
+  "desc"      text        NOT NULL,
   sort_order  int         NOT NULL DEFAULT 0,
   is_active   boolean     NOT NULL DEFAULT true,
   created_at  timestamptz NOT NULL DEFAULT now(),
@@ -175,17 +190,18 @@ CREATE TABLE IF NOT EXISTS categories (
 
 ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "categories anyone can read" ON categories;
 CREATE POLICY "categories anyone can read"
   ON categories FOR SELECT TO authenticated, anon
   USING (true);
 
+DROP POLICY IF EXISTS "categories admin can write" ON categories;
 CREATE POLICY "categories admin can write"
   ON categories FOR ALL TO authenticated
-  USING (auth.jwt()->>'role' = 'service_role' OR
-         auth.uid() IN (SELECT id FROM auth.users WHERE raw_user_meta_data->>'is_admin' = 'true'));
+  USING (public.is_admin());
 
 -- 初始分类数据
-INSERT INTO categories (slug, name, icon, desc, sort_order) VALUES
+INSERT INTO categories (slug, name, icon, "desc", sort_order) VALUES
   ('hot',      '热门与最新', 'Flame',          '平台精选优质 AI 工具',                -1),
   ('writing',  'AI 写作工具',    'PenLine',      '长文、公文、小说、营销文案一键生成',  1),
   ('image',    'AI 图像工具',    'Image',        '文生图、图像编辑、抠图与修复',          2),
@@ -234,28 +250,30 @@ CREATE TABLE IF NOT EXISTS tools (
 
 ALTER TABLE tools ENABLE ROW LEVEL SECURITY;
 
-CREATE INDEX idx_tools_category    ON tools (category_id);
-CREATE INDEX idx_tools_status      ON tools (status, created_at DESC) WHERE status = 'published';
-CREATE INDEX idx_tools_hot_new     ON tools (hot DESC, new DESC, created_at DESC);
-CREATE INDEX idx_tools_slug        ON tools (slug);
-CREATE INDEX idx_tools_search      ON tools USING gin (to_tsvector('simple', name || ' ' || summary));
+CREATE INDEX IF NOT EXISTS idx_tools_category    ON tools (category_id);
+CREATE INDEX IF NOT EXISTS idx_tools_status      ON tools (status, created_at DESC) WHERE status = 'published';
+CREATE INDEX IF NOT EXISTS idx_tools_hot_new     ON tools (hot DESC, new DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tools_slug        ON tools (slug);
+CREATE INDEX IF NOT EXISTS idx_tools_search      ON tools USING gin (to_tsvector('simple', name || ' ' || summary));
 
 -- 公开读取
+DROP POLICY IF EXISTS "tools anyone can read published" ON tools;
 CREATE POLICY "tools anyone can read published"
   ON tools FOR SELECT TO authenticated, anon
   USING (status = 'published');
 
 -- 提交用户可编辑自己提交的
+DROP POLICY IF EXISTS "tools owner can update own" ON tools;
 CREATE POLICY "tools owner can update own"
   ON tools FOR UPDATE TO authenticated
   USING (auth.uid() = submitted_by)
   WITH CHECK (auth.uid() = submitted_by);
 
 -- 管理员可管理全部
+DROP POLICY IF EXISTS "tools admin full access" ON tools;
 CREATE POLICY "tools admin full access"
   ON tools FOR ALL TO authenticated
-  USING (auth.jwt()->>'role' = 'service_role' OR
-         auth.uid() IN (SELECT id FROM auth.users WHERE raw_user_meta_data->>'is_admin' = 'true'));
+  USING (public.is_admin());
 
 
 -- ============================================================
@@ -284,21 +302,22 @@ CREATE TABLE IF NOT EXISTS submissions (
 
 ALTER TABLE submissions ENABLE ROW LEVEL SECURITY;
 
-CREATE INDEX idx_submissions_user     ON submissions (user_id, created_at DESC);
-CREATE INDEX idx_submissions_status   ON submissions (status, created_at) WHERE status = 'reviewing';
-CREATE INDEX idx_submissions_slug     ON submissions (slug);
+CREATE INDEX IF NOT EXISTS idx_submissions_user     ON submissions (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_submissions_status   ON submissions (status, created_at) WHERE status = 'reviewing';
+CREATE INDEX IF NOT EXISTS idx_submissions_slug     ON submissions (slug);
 
 -- 用户只能看自己的
+DROP POLICY IF EXISTS "submissions user own only" ON submissions;
 CREATE POLICY "submissions user own only"
   ON submissions FOR ALL TO authenticated
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
 -- 管理员可查看全部
+DROP POLICY IF EXISTS "submissions admin full access" ON submissions;
 CREATE POLICY "submissions admin full access"
   ON submissions FOR ALL TO authenticated
-  USING (auth.jwt()->>'role' = 'service_role' OR
-         auth.uid() IN (SELECT id FROM auth.users WHERE raw_user_meta_data->>'is_admin' = 'true'));
+  USING (public.is_admin());
 
 
 -- ============================================================
@@ -312,14 +331,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_categories_updated_at ON categories;
 CREATE TRIGGER trg_categories_updated_at
   BEFORE UPDATE ON categories
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS trg_tools_updated_at ON tools;
 CREATE TRIGGER trg_tools_updated_at
   BEFORE UPDATE ON tools
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS trg_submissions_updated_at ON submissions;
 CREATE TRIGGER trg_submissions_updated_at
   BEFORE UPDATE ON submissions
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -420,6 +442,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_promote_submission ON submissions;
 CREATE TRIGGER trg_promote_submission
   AFTER UPDATE ON submissions
   FOR EACH ROW
