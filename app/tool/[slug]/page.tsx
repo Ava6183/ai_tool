@@ -40,7 +40,7 @@ export default async function ToolPage({ params }: { params: Promise<{ slug: str
   const related = toolsByCategory(tool.category)
     .filter((x) => x.slug !== tool.slug)
     .slice(0, 6)
-  const paragraphs = toolContent(tool).split('\n\n')
+  const blocks = toolContent(tool)
   const qa = toolQA(tool)
 
   return (
