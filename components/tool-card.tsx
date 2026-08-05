@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { ArrowUpRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { type Tool, toolColor, toolInitial } from '@/lib/data'
@@ -7,9 +8,29 @@ export function ToolLogo({
   tool,
   className,
 }: {
-  tool: Pick<Tool, 'slug' | 'name'>
+  tool: Pick<Tool, 'slug' | 'name' | 'logo_url'>
   className?: string
 }) {
+  const logo = tool.logo_url
+
+  if (logo) {
+    return (
+      <span
+        aria-hidden="true"
+        className={cn('relative size-10 shrink-0 overflow-hidden rounded-xl', className)}
+      >
+        <Image
+          src={logo}
+          alt={`${tool.name} logo`}
+          width={40}
+          height={40}
+          className="size-full object-cover"
+          unoptimized
+        />
+      </span>
+    )
+  }
+
   return (
     <span
       aria-hidden="true"

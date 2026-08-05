@@ -1,10 +1,11 @@
-import type { Metadata } from 'next'
-import Image from 'next/image'
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { notFound } from 'next/navigation'
-import { ArrowUpRight, ChevronLeft } from 'lucide-react'
+import { ArrowUpRight, ChevronLeft, Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Accordion,
@@ -13,35 +14,94 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion'
 import { Separator } from '@/components/ui/separator'
-import { ToolCard, ToolLogo } from '@/components/tool-card'
-import { getCategory, getTool, toolContent, toolQA, tools, toolsByCategory } from '@/lib/data'
+import { ToolLogo } from '@/components/tool-card'
+import { MarkdownContent } from '@/components/markdown-content'
+import { getBrowserClient } from '@/lib/supabase'
+import { categories } from '@/lib/data'
 
-export function generateStaticParams() {
-  return tools.map((tool) => ({ slug: tool.slug }))
+type ToolRow = {
+  slug: string
+  name: string
+  summary: string
+  url: string
+  category: string
+  tags?: string[]
+  hot?: boolean
+  new?: boolean
+  logo_url?: string
+  content?: unknown
+  qa?: { q: string; a: string }[]
+  cover_url?: string
+  view_count?: number
+  created_at?: string
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ slug: string }>
-}): Promise<Metadata> {
-  const { slug } = await params
-  const tool = getTool(slug)
-  if (!tool) return { title: '工具不存在' }
-  return { title: tool.name, description: tool.summary }
-}
+export default function ToolPage({ params }: { params: Promise<{ slug: string }> }) {
+  const [slug, setSlug] = useState<string | null>(null)
+  const [tool, setTool] = useState<ToolRow | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-export default async function ToolPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
-  const tool = getTool(slug)
-  if (!tool) notFound()
+  useEffect(() => {
+    params.then((p) => setSlug(p.slug))
+  }, [params])
 
-  const category = getCategory(tool.category)
-  const related = toolsByCategory(tool.category)
-    .filter((x) => x.slug !== tool.slug)
-    .slice(0, 6)
-  const blocks = toolContent(tool)
-  const qa = toolQA(tool)
+  useEffect(() => {
+    if (!slug) return
+    const supabase = getBrowserClient()
+    if (!supabase) {
+      setError('客户端未初始化')
+      setLoading(false)
+      return
+    }
+    ;(async () => {
+      try {
+        const { data, error: err } = await supabase
+          .from('tools')
+          .select('slug, name, summary, url, category_id, tags, hot, new, logo_url, content, qa, cover_url, view_count, created_at')
+          .eq('slug', slug)
+          .eq('status', 'published')
+          .single()
+        if (err) {
+          console.error('[ToolPage] fetch error:', err)
+          setError(err.message)
+        } else if (data) {
+          const row = data as unknown as ToolRow & { category_id?: string }
+          setTool({
+            ...row,
+            category: row.category_id ?? row.category ?? '',
+          })
+        } else {
+          notFound()
+        }
+      } catch (e: unknown) {
+        console.error('[ToolPage] unexpected error:', e)
+        setError('加载失败，请稍后重试')
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [slug])
+
+  const category = useMemo(() => categories.find((c) => c.slug === tool?.category), [tool?.category])
+  const rawContent = tool?.content as { type: string; text?: string; title?: string; items?: string[] }[] | null | undefined
+  const isMarkdown = rawContent
+    ? rawContent.length === 1 && rawContent[0]?.type === 'markdown' && typeof rawContent[0]?.text === 'string'
+    : false
+  const markdownText = isMarkdown ? (rawContent?.[0]?.text ?? '') : ''
+  const qa = tool?.qa ?? []
+
+  if (loading) {
+    return (
+      <div className="flex min-h-svh items-center justify-center">
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (error || !tool) {
+    notFound()
+  }
 
   return (
     <div className="min-h-svh">
@@ -53,23 +113,27 @@ export default async function ToolPage({ params }: { params: Promise<{ slug: str
           <ChevronLeft className="size-4" />
           返回 AI 工具集
         </Link>
-        <Button render={<a href={tool.url} target="_blank" rel="noopener noreferrer" />}>
+        <a href={tool.url} target="_blank" rel="noopener noreferrer">
           打开网站
           <ArrowUpRight data-icon="inline-end" />
-        </Button>
+        </a>
       </header>
 
       <main className="mx-auto max-w-5xl px-4 pb-16 md:px-6">
-        <div className="relative mt-6 aspect-3/1 w-full overflow-hidden rounded-2xl border border-border bg-muted">
-          <Image
-            src="/images/tool-cover.png"
-            alt={`${tool.name} 封面图`}
-            fill
-            priority
-            sizes="(max-width: 1024px) 100vw, 1024px"
-            className="object-cover"
-          />
-        </div>
+        {tool.cover_url ? (
+          <div className="relative mt-6 aspect-3/1 w-full overflow-hidden rounded-2xl border border-border bg-muted">
+            <Image
+              src={tool.cover_url}
+              alt={`${tool.name} 封面图`}
+              fill
+              priority
+              sizes="(max-width: 1024px) 100vw, 1024px"
+              className="object-cover"
+            />
+          </div>
+        ) : (
+          <div className="mt-6 h-32 w-full overflow-hidden rounded-2xl border border-border bg-muted" />
+        )}
 
         <div className="mt-6 flex flex-wrap items-start gap-4">
           <ToolLogo tool={tool} className="size-16 rounded-2xl text-2xl" />
@@ -98,70 +162,66 @@ export default async function ToolPage({ params }: { params: Promise<{ slug: str
               ))}
             </div>
           </div>
-          <Button
-            size="lg"
-            render={<a href={tool.url} target="_blank" rel="noopener noreferrer" />}
-            className="hidden md:inline-flex"
+          <a
+            href={tool.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hidden md:inline-flex items-center gap-1.5 rounded-lg border border-transparent bg-clip-padding px-2.5 py-1.5 text-sm font-medium transition-all hover:bg-primary/90 hover:text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             打开网站
-            <ArrowUpRight data-icon="inline-end" />
-          </Button>
+            <ArrowUpRight className="size-4" />
+          </a>
         </div>
 
         <Separator className="my-8" />
 
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="flex flex-col gap-6 lg:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>工具介绍</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                {blocks.map((block, i) =>
-                  block.type === 'list' ? (
-                    <div key={i} className="flex flex-col gap-2">
-                      <p className="text-sm font-semibold">{block.title}</p>
-                      <ul className="flex flex-col gap-1.5">
-                        {block.items.map((item) => (
-                          <li
-                            key={item}
-                            className="flex gap-2 text-sm leading-relaxed text-muted-foreground"
-                          >
-                            <span
-                              aria-hidden="true"
-                              className="mt-2 size-1.5 shrink-0 rounded-full bg-primary"
-                            />
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <p key={i} className="text-sm leading-relaxed text-pretty text-muted-foreground">
-                      {block.text}
-                    </p>
-                  ),
-                )}
-              </CardContent>
-            </Card>
+            {markdownText ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>工具介绍</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <MarkdownContent content={markdownText} />
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>工具介绍</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-4">
+                  <p className="text-sm leading-relaxed text-pretty text-muted-foreground">
+                    {tool.summary}
+                  </p>
+                  <p className="text-sm leading-relaxed text-pretty text-muted-foreground">
+                    {category ? `${tool.name} 是一款${category.name}，${tool.summary}。` : `${tool.name} 是一款 AI 产品，${tool.summary}。`}
+                    它在中文语境下做了大量针对性优化，内置符合国内使用习惯的模板与预设，支持团队协作与结果二次编辑。
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
-            <Card>
-              <CardHeader>
-                <CardTitle>常见问题</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Accordion defaultValue={[qa[0]?.q ?? '']}>
-                  {qa.map((item) => (
-                    <AccordionItem key={item.q} value={item.q}>
-                      <AccordionTrigger className="text-left text-sm">{item.q}</AccordionTrigger>
-                      <AccordionContent className="text-sm leading-relaxed text-muted-foreground">
-                        {item.a}
-                      </AccordionContent>
-                    </AccordionItem>
-                  ))}
-                </Accordion>
-              </CardContent>
-            </Card>
+            {qa.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>常见问题</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Accordion defaultValue={[qa[0]?.q ?? '']}>
+                    {qa.map((item) => (
+                      <AccordionItem key={item.q} value={item.q}>
+                        <AccordionTrigger className="text-left text-sm">{item.q}</AccordionTrigger>
+                        <AccordionContent className="text-sm leading-relaxed text-muted-foreground">
+                          {item.a}
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           <div className="flex flex-col gap-6">
@@ -189,28 +249,17 @@ export default async function ToolPage({ params }: { params: Promise<{ slug: str
                     {tool.url.replace('https://', '')}
                   </a>
                 </div>
-                <Button
-                  className="mt-1 w-full"
-                  render={<a href={tool.url} target="_blank" rel="noopener noreferrer" />}
+                <a
+                  href={tool.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-transparent bg-clip-padding px-2.5 py-1.5 text-sm font-medium transition-all hover:bg-primary/90 hover:text-primary-foreground"
                 >
                   打开网站
-                  <ArrowUpRight data-icon="inline-end" />
-                </Button>
+                  <ArrowUpRight className="size-4" />
+                </a>
               </CardContent>
             </Card>
-
-            {related.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>同类推荐</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-2">
-                  {related.map((item) => (
-                    <ToolCard key={item.slug} tool={item} />
-                  ))}
-                </CardContent>
-              </Card>
-            )}
           </div>
         </div>
       </main>

@@ -157,7 +157,8 @@ CREATE POLICY "submissions user own only"
 DROP POLICY IF EXISTS "submissions admin full access" ON submissions;
 CREATE POLICY "submissions admin full access"
   ON submissions FOR ALL TO authenticated
-  USING (public.is_admin());
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
 
 
 -- ============================================================
@@ -281,3 +282,4 @@ CREATE TRIGGER trg_promote_submission
   FOR EACH ROW
   WHEN (OLD.status IS DISTINCT FROM NEW.status)
   EXECUTE FUNCTION promote_submission_to_tool();
+

@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Clock, Flame, SearchX } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -8,7 +7,8 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/
 import { CategorySidebar } from '@/components/category-sidebar'
 import { SiteHeader } from '@/components/site-header'
 import { ToolGrid } from '@/components/tool-card'
-import { categories, hotTools, newTools, tools, toolsByCategory } from '@/lib/data'
+import { categories, type Tool } from '@/lib/data'
+import { useTools } from '@/lib/hooks/use-tools'
 
 function SectionLabel({
   icon: Icon,
@@ -31,7 +31,7 @@ export function Directory() {
   const [query, setQuery] = useState('')
   const [activeSlug, setActiveSlug] = useState<string>('hot')
   const clickLock = useRef(false)
-
+  const tools = useTools()
   const searching = query.trim().length > 0
 
   const results = useMemo(() => {
@@ -47,7 +47,14 @@ export function Directory() {
         (tool.tags ?? []).some((tag) => tag.toLowerCase().includes(q))
       )
     })
-  }, [query])
+  }, [query, tools])
+
+  const hotTools = useMemo(() => tools.filter((t) => t.hot), [tools])
+  const newTools = useMemo(() => tools.filter((t) => t.new), [tools])
+  const toolsByCategory = useMemo(
+    () => (slug: string) => tools.filter((t) => t.category === slug),
+    [tools],
+  )
 
   useEffect(() => {
     if (searching) return
@@ -67,7 +74,7 @@ export function Directory() {
       if (el) observer.observe(el)
     })
     return () => observer.disconnect()
-  }, [searching])
+  }, [searching, tools])
 
   function handleNavigate(slug: string) {
     setActiveSlug(slug)
@@ -169,12 +176,12 @@ export function Directory() {
                         </h2>
                         <p className="text-xs text-muted-foreground">{cat.desc}</p>
                       </div>
-                      <Link
+                      <a
                         href={`/category/${cat.slug}`}
                         className="text-xs font-medium text-primary hover:underline"
                       >
                         查看更多 ({items.length})
-                      </Link>
+                      </a>
                     </div>
                     <ToolGrid items={items} />
                   </section>
@@ -185,7 +192,7 @@ export function Directory() {
         </main>
 
         <footer className="border-t border-border px-4 py-6 text-center text-xs text-muted-foreground md:px-6">
-          AI 工具集 · 数据为演示内容，收录信息以各工具官网为准
+          AI 工具集 · 数据来自用户提交与人工收录
         </footer>
       </div>
     </div>

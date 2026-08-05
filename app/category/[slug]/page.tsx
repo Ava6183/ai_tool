@@ -1,51 +1,63 @@
-import type { Metadata } from 'next'
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
 import { ToolGrid } from '@/components/tool-card'
-import { categories, getCategory, toolsByCategory } from '@/lib/data'
+import { CategorySidebar } from '@/components/category-sidebar'
+import { SiteHeader } from '@/components/site-header'
+import { categories } from '@/lib/data'
+import { useTools } from '@/lib/hooks/use-tools'
 
-export function generateStaticParams() {
-  return categories.map((cat) => ({ slug: cat.slug }))
-}
+export default function CategoryPage({ params }: { params: Promise<{ slug: string }> }) {
+  const [slug, setSlug] = useState<string | null>(null)
+  const tools = useTools()
+  const [activeSlug, setActiveSlug] = useState('')
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ slug: string }>
-}): Promise<Metadata> {
-  const { slug } = await params
-  const cat = getCategory(slug)
-  if (!cat) return { title: '分类不存在' }
-  return { title: cat.name, description: cat.desc }
-}
+  useEffect(() => {
+    params.then((p) => {
+      setSlug(p.slug)
+      setActiveSlug(p.slug)
+    })
+  }, [params])
 
-export default async function CategoryPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
-  const cat = getCategory(slug)
-  if (!cat) notFound()
-  const items = toolsByCategory(slug)
+  const category = useMemo(() => (slug ? categories.find((c) => c.slug === slug) : undefined), [slug])
+  const items = useMemo(() => (slug ? tools.filter((t) => t.category === slug) : []), [tools, slug])
+
+  if (!category) return null
 
   return (
-    <div className="min-h-svh">
-      <header className="flex h-16 items-center border-b border-border px-4 md:px-6">
-        <Link
-          href="/"
-          className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ChevronLeft className="size-4" />
-          返回 AI 工具集
-        </Link>
-      </header>
-      <main className="mx-auto max-w-7xl px-4 py-10 md:px-6">
-        <h1 className="text-2xl font-black tracking-tight md:text-3xl">{cat.name}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {cat.desc} · 共收录 {items.length} 个工具
-        </p>
-        <div className="mt-8">
-          <ToolGrid items={items} />
-        </div>
-      </main>
+    <div className="flex min-h-svh">
+      <aside className="sticky top-0 z-40 hidden h-svh w-60 shrink-0 border-r border-sidebar-border lg:block">
+        <CategorySidebar activeSlug={activeSlug} onNavigate={setActiveSlug} />
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <SiteHeader activeSlug={activeSlug} query="" onQueryChange={() => {}} compactBrand />
+
+        <main className="flex-1 px-4 pb-16 md:px-6">
+          <div className="pt-8">
+            <Link
+              href="/"
+              className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ChevronLeft className="size-4" />
+              返回 AI 工具集
+            </Link>
+            <h1 className="text-2xl font-black tracking-tight md:text-3xl">{category.name}</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {category.desc} · 共收录 {items.length} 个工具
+            </p>
+            <div className="mt-8">
+              <ToolGrid items={items} />
+            </div>
+          </div>
+        </main>
+
+        <footer className="border-t border-border px-4 py-6 text-center text-xs text-muted-foreground md:px-6">
+          AI 工具集 · 数据来自用户提交与人工收录
+        </footer>
+      </div>
     </div>
   )
 }

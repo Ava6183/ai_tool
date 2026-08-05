@@ -64,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const { data, error } = await supabase
           .from('submissions')
-          .select('id, name, slug, url, summary, category, status, created_at')
+          .select('id, name, slug, url, summary, category, status, created_at, logo_url, cover_url')
           .eq('user_id', uid)
           .order('created_at', { ascending: false })
 
@@ -88,6 +88,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             category: row.category as string,
             status: (row.status as 'reviewing' | 'published') ?? 'reviewing',
             createdAt: new Date(row.created_at as string).toLocaleString('zh-CN', { hour12: false }),
+            logo_url: (row.logo_url as string) ?? undefined,
+            cover_url: (row.cover_url as string) ?? undefined,
           })),
         )
       } catch (err: any) {

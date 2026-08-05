@@ -18,6 +18,7 @@ export type Tool = {
   tags?: string[]
   hot?: boolean
   new?: boolean
+  logo_url?: string
   content?: ContentBlock[]
   qa?: { q: string; a: string }[]
 }
