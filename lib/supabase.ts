@@ -5,8 +5,18 @@ let cachedUrl = ''
 let cachedKey = ''
 
 export function getBrowserClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!url || !key) {
+    if (typeof window !== 'undefined') {
+      console.error(
+        '[supabase] 缺少环境变量 NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY — 请检查 Vercel 配置',
+      )
+    }
+    return null
+  }
+
   if (cachedClient && cachedUrl === url && cachedKey === key) return cachedClient
   cachedUrl = url
   cachedKey = key
@@ -16,7 +26,6 @@ export function getBrowserClient() {
     auth: {
       autoRefreshToken: true,
       persistSession: true,
-      // 使用 Supabase 默认 storageKey，避免自定义 key 触发 localStorage 访问错误
     },
   })
   return cachedClient

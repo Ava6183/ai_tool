@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ChevronLeft } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ChevronLeft, Loader2 } from 'lucide-react'
 import { ToolGrid } from '@/components/tool-card'
 import { CategorySidebar } from '@/components/category-sidebar'
 import { SiteHeader } from '@/components/site-header'
@@ -13,6 +14,7 @@ export default function CategoryPage({ params }: { params: Promise<{ slug: strin
   const [slug, setSlug] = useState<string | null>(null)
   const tools = useTools()
   const [activeSlug, setActiveSlug] = useState('')
+  const router = useRouter()
 
   useEffect(() => {
     params.then((p) => {
@@ -24,7 +26,21 @@ export default function CategoryPage({ params }: { params: Promise<{ slug: strin
   const category = useMemo(() => (slug ? categories.find((c) => c.slug === slug) : undefined), [slug])
   const items = useMemo(() => (slug ? tools.filter((t) => t.category === slug) : []), [tools, slug])
 
-  if (!category) return null
+  // 等 slug 解析完成
+  if (!slug) {
+    return (
+      <div className="flex min-h-svh items-center justify-center">
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  // slug 已解析但分类不存在 → 404
+  if (!category) {
+    // useEffect 中不能直接用 notFound()，用 router 跳转
+    router.replace('/not-found')
+    return null
+  }
 
   return (
     <div className="flex min-h-svh">

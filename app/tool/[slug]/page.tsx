@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { notFound } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { ArrowUpRight, ChevronLeft, Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -41,6 +41,7 @@ export default function ToolPage({ params }: { params: Promise<{ slug: string }>
   const [tool, setTool] = useState<ToolRow | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
 
   useEffect(() => {
     params.then((p) => setSlug(p.slug))
@@ -72,7 +73,7 @@ export default function ToolPage({ params }: { params: Promise<{ slug: string }>
             category: row.category_id ?? row.category ?? '',
           })
         } else {
-          notFound()
+          router.replace('/not-found')
         }
       } catch (e: unknown) {
         console.error('[ToolPage] unexpected error:', e)
@@ -100,7 +101,8 @@ export default function ToolPage({ params }: { params: Promise<{ slug: string }>
   }
 
   if (error || !tool) {
-    notFound()
+    router.replace('/not-found')
+    return null
   }
 
   return (
